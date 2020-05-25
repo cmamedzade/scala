@@ -1,0 +1,10 @@
+
+#############---create kafka topic----##########
+
+kafka-topics --create --zookeeper 192.168.100.203:2181 --replication-factor 1 --partitions 1 --topic market
+kafka-topics --list --zookeeper 192.168.100.203:2181
+
+kafka-console-producer --bootstrap-server 192.168.100.207:9092 --topic search
+kafka-console-consumer --bootstrap-server 192.168.100.207:9092 --topic search
+
+

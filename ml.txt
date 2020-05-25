@@ -1,0 +1,268 @@
+## linear regression########
+import org.apache.spark.ml.feature.VectorAssembler
+import org.apache.spark.ml.regression.LinearRegression
+
+val row_data = spark.read.format("csv").option("header","true").load("/user/spark/satis.csv").withColumn("ay",'ay.cast("double")).withColumn("satis",'satis.cast("double"))
+
+val features_vector = new VectorAssembler().setInputCols(Array("ay")).setOutputCol("features")
+
+val transform = features_vector.transform(row_data)
+
+val final_data = transform.select("features","satis")
+
+val dataset = final_data.randomSplit(Array(0.7,0.3))
+val train_data = dataset(0)
+val test_data = dataset(1)
+val lr = new LinearRegression
+lr.setLabelCol("satis")
+val model = lr.fit(train_data) v
+val transform_test = model.transform(test_data)vval 
+transform_test.show
+
+
+val new_data = spark.read.format("csv").load("/user/spark/satis1.csv").withColumn("_c0",'_c0.cast("double")).withColumnRenamed("_c0","ay")
+
+val transform_new_data = features_vector.transform(new_data)
+val transform_test = model.transform(transform_new_data)
+transform_test.show
+
+## calculate model efficency##########
+(realval-predval)power = aN  calculate each a = aX
+(realval-avg(predval))power = bN calculate each b = bX
+R2 = 1 - (aX / bX)
+
+val summary = model.summary
+summary.r2
+
+------------------------------------------------------------------
+########### Naiv bayes  #########(siniflandirma)
+
+P(C|X) = P(X|C)P(C) / P(X)
+
+class(sinif)
+C1 = play basketbol = yes
+C2 = play basketbol = no
+
+P(play basketbol = yes) = 6/9 = 0.66
+P(play basketbol = no) = 3/9 = 0.33
+
+import org.apache.spark.ml.feature.VectorAssembler
+import org.apache.spark.mllib.classification.{NaiveBayes, NaiveBayesModel}
+import org.apache.spark.ml.classification.NaiveBayes
+import org.apache.spark.ml.feature.StringIndexer
+import org.apache.spark.ml.feature
+
+val row_data = spark.read.format("csv").option("header","true").option("inferSchema","true").load("/user/spark/basketball.csv")
+
+val indexHava = new StringIndexer().setInputCol("hava").setOutputCol("hava_cat");
+val indexNem = new StringIndexer().setInputCol("nem").setOutputCol("nem_cat");
+val indexTemp = new StringIndexer().setInputCol("temp").setOutputCol("temp_cat");
+val indexKulek = new StringIndexer().setInputCol("kulek").setOutputCol("kulek_cat");
+val indexLabel = new StringIndexer().setInputCol("basketbol").setOutputCol("label");
+'
+val transformHava = indexHava.fit(row_data).transform(row_data);
+val transformNem = indexNem.fit(transformHava).transform(transformHava);
+val transformTemp = indexTemp.fit(transformNem).transform(transformNem);
+val transformKulek = indexKulek.fit(transformTemp).transform(transformTemp);
+val transformResult = indexLabel.fit(transformKulek).transform(transformKulek);
+
+val features_vector = new VectorAssembler().setInputCols(Array("hava_cat","nem_cat","temp_cat","kulek_cat")).setOutputCol("features")
+
+val transform = features_vector.transform(transformResult)
+val final_data = transform.select("label","features")
+
+val dataset = final_data.randomSplit(Array(0.7,0.3))
+val train_data = dataset(0)
+val test_data = dataset(1)
+
+val nb = new NaiveBayes();
+nb.setSmoothing(1);
+val model = nb.fit(train_data) 
+val prediction = model.transform(test_data)
+prediction.show
+
+
+#### missing value prediction ############
+val row_data1 = spark.read.format("csv").option("header","true").option("inferSchema","true").load("/user/spark/basket.csv")
+val transformHava1 = indexHava.fit(row_data1).transform(row_data1);
+val transformNem1 = indexNem.fit(transformHava1).transform(transformHava1);
+val transformTemp1 = indexTemp.fit(transformNem1).transform(transformNem1);
+val transformKulek1 = indexKulek.fit(transformTemp1).transform(transformTemp1);
+
+ 
+val transform1 = features_vector.transform(transformKulek1)
+val prediction = model.transform(transform1)
+prediction.show
+
+++++++++++++++++++++++++++++++++++++++++
+===============evaluate naive bayes=====
+import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
+
+val evaluator = new MulticlassClassificationEvaluator().setLabelCol("label").setPredictionCol("prediction").setMetricName("accuracy")
+val evaluate = evaluator.evaluate(prediction);
+evaluate.show();
+
+____________diabets______________
+
+import java.util
+import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
+import org.apache.spark.ml.classification.NaiveBayes
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.ml.feature.{StringIndexer, VectorAssembler}
+import org.apache.spark.sql.Row
+import org.apache.spark.sql.Dataset
+import java.util.ArrayList
+
+import org.apache.spark.ml.classification.NaiveBayes
+import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
+
+import scala.collection.JavaConversions._
+
+object hello {
+
+   val headers: List[String] = List("Pregnancies","Glucose","BloodPressure","SkinThickness","Insulin","BMI","DiabetesPedigreeFunction","Age","Outcome")
+
+  def main(args: Array[String]): Unit = {
+    System.setProperty("hadoop.home.dir","C:\\hadoop")
+    val sparksession = SparkSession.builder().appName("test").master("local").getOrCreate()
+    var rowdata = sparksession.read.format("csv").option("header", "true")
+      .option("inferSchema", "true")
+      .load("C:\\datasets\\diabetes.csv")
+
+    val headerResult = new util.ArrayList[String]()
+
+
+    for (  h <- headers ){
+
+      if (h.equals("Outcome"))
+        {
+          val indextemp = new  StringIndexer().setInputCol(h).setOutputCol("label")
+          rowdata = indextemp.fit(rowdata).transform(rowdata)
+          headerResult.add("label")
+        }
+      else
+        {
+          val indextemp = new  StringIndexer().setInputCol(h).setOutputCol(h.toLowerCase() + "_cat")
+          rowdata = indextemp.fit(rowdata).transform(rowdata)
+          headerResult.add(h.toLowerCase() + "_cat")
+        }
+    }
+    val colList = headerResult.toSet
+    val col = colList.toArray
+    val assembler = new VectorAssembler().setInputCols(col).setOutputCol("features")
+    val tranformData = assembler.transform(rowdata)
+    val finalData = tranformData.select("label","features")
+    val dataset = finalData.randomSplit(Array(0.9,0.1))
+    val trainData = dataset(0)
+    val testData = dataset(1)
+
+    val nb = new NaiveBayes()
+    nb.setSmoothing(1)
+    val model = nb.fit(trainData)
+    val prediction = model.transform(testData)
+
+ //   prediction.show(false)
+
+    val evaluator = new  MulticlassClassificationEvaluator()
+      .setLabelCol("label")
+      .setPredictionCol("prediction")
+      .setMetricName("accuracy")
+
+    val  eval = evaluator.evaluate(prediction)
+
+    println("Accuracy: " + eval)
+  }
+}
+
+------------------------------------------------------------
+
+val sparksession = SparkSession.builder()
+      .appName("test")
+      .master("yarn")
+      .config("spark.hadoop.fs.defaultFS","hdfs://192.168.100.207:8020")
+      .config("spark.hadoop.yarn.resourcemanager.address","192.168.100.207:8032")
+      .config("spark.hadoop.yarn.application.classpath", "$HADOOP_CONF_DIR,$HADOOP_COMMON_HOME/*," +
+        "$HADOOP_COMMON_HOME/lib/*,$HADOOP_HDFS_HOME/*,$HADOOP_HDFS_HOME/lib/*,$HADOOP_MAPRED_HOME/*," +
+        "$HADOOP_MAPRED_HOME/lib/*,$HADOOP_YARN_HOME/*,$HADOOP_YARN_HOME/lib/*")
+      .config("spark.executor.memory","512MB")
+      .config("spark.yarn.jars","C:\\Users\\admin1\\Desktop\\spark-2.4.5-bin-hadoop2.7\\spark-2.4.5-bin-hadoop2.7\\jars\\*")
+      .getOrCreate()
+
+
+
+val rowData = spark.read.format("csv").option("header","true").option("inferSchema","true").load("/user/spark/satis.csv").withColumn("satis",col("satis").cast("Double")).withColumn("ay",col("ay").cast("Double"))
+
+
+----------------------------------------------------------------------
+==================logistic_Regresssion=============classification
+import org.apache.spark.ml.classification.LogisticRegression
+import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
+import org.apache.spark.ml.feature.VectorAssembler
+import org.apache.spark.ml.feature.StringIndexer
+import org.apache.spark.sql.{Dataset, SparkSession}
+
+
+
+
+object Logistic {
+
+  def main(args: Array[String]): Unit = {
+
+    val sparksession = SparkSession.builder().appName("Logistic").master("local").getOrCreate()
+
+    var rowData = sparksession.read.format("csv")
+      .option("header", "true")
+      .option("inferSchema", "true")
+      .load("C:\\datasets\\titanic.csv")
+
+
+
+    val header: List[String] = List("Sex","Ticket","Cabin","Embarked")
+    val headers: Array[String] = Array("PassengerId","Pclass","Sex_indx","Age","SibSp","Parch","Ticket_indx","Cabin_indx","Embarked_indx")
+
+
+
+    for ( h <- header )  {
+      if (h.equals("Embarked")) {
+        val tempIndex = new StringIndexer().setInputCol(h).setOutputCol(h+"_indx").setHandleInvalid("skip")
+        rowData = tempIndex.fit(rowData).transform(rowData)
+
+      }
+      else {
+        val tempIndex = new StringIndexer().setInputCol(h).setOutputCol(h+"_indx").setHandleInvalid("skip")
+         rowData = tempIndex.fit(rowData).transform(rowData)
+      }
+
+      }
+
+    val featuresVector = new VectorAssembler().setInputCols(headers).setOutputCol("features").setHandleInvalid("skip")
+    val transform = featuresVector.transform(rowData)
+    val finalData = transform.select("features","Survived").withColumnRenamed("Survived","label")
+
+
+
+    val dataset = finalData.randomSplit(Array(0.9,0.1))
+    val trainData = dataset(0)
+    val testData = dataset(1)
+
+   val vusal  = transform.filter("PassengerId = 157")
+     .select("features","Survived").withColumnRenamed("Survived","label")
+
+    val logisticReg = new LogisticRegression()
+    val model = logisticReg.fit(trainData)
+    val prediction  = model.transform(vusal)
+    prediction.show(10,false)
+
+    val evaluator = new  MulticlassClassificationEvaluator()
+      .setLabelCol("label")
+      .setPredictionCol("prediction")
+      .setMetricName("accuracy")
+
+    val  eval = evaluator.evaluate(prediction)
+    println("accuracy:    "+ eval)
+
+  }
+
+}
+-----------------------------------------------------
+

@@ -1,0 +1,182 @@
+--split one column into multiple dataframe
+
+spark-shell --executor-memory 512MB --master yarn
+
+temp.withColumn("_tmp", split($"value", "\\,")).select(
+  $"_tmp".getItem(0).as("col1"),
+  $"_tmp".getItem(1).as("col2"),
+  $"_tmp".getItem(2).as("col3"),
+  $"_tmp".getItem(3).as("col4"),
+  $"_tmp".getItem(4).as("col5"),
+  $"_tmp".getItem(5).as("col6"),
+  $"_tmp".getItem(6).as("col7"),
+  $"_tmp".getItem(7).as("col8"),
+  $"_tmp".getItem(8).as("col9"),
+  $"_tmp".getItem(9).as("col10")  
+).show(false)
+
+
+val rowData = spark.read.textFile("hdfs://192.168.100.207:8020/user/spark/worldcup.csv").withColumn("_tmp", split($"value", "\\,")).select(
+        $"_tmp".getItem(0).as("col1"),
+        $"_tmp".getItem(1).as("col2"),
+        $"_tmp".getItem(2).as("col3"),
+        $"_tmp".getItem(3).as("col4"),
+        $"_tmp".getItem(4).as("col5"),
+        $"_tmp".getItem(5).as("col6"),
+        $"_tmp".getItem(6).as("col7"),
+        $"_tmp".getItem(7).as("col8"),
+        $"_tmp".getItem(8).as("col9"),
+        $"_tmp".getItem(9).as("col10")  
+      )
+
+
+val rowData = spark.read.textFile("hdfs://192.168.100.207:8020/user/spark/worldcup.csv").withColumn("_tmp", split($"value", "\\,")).select(
+        $"_tmp".getItem(0).as("col1"),
+        $"_tmp".getItem(1).as("col2"),
+        $"_tmp".getItem(2).as("col3"),
+        $"_tmp".getItem(3).as("col4"),
+        $"_tmp".getItem(4).as("col5"),
+        $"_tmp".getItem(5).as("col6"),
+        $"_tmp".getItem(6).as("col7"),
+        $"_tmp".getItem(7).as("col8"),
+        $"_tmp".getItem(8).as("col9"),
+        $"_tmp".getItem(9).as("col10")  
+      ).withColumn("col7",'col7.cast("int")).withColumn("col8",'col8.cast("int")).withColumn("col9",'col9.cast("int")).withColumn("col10",'col10.cast("float"))
+
+
+
+
+val players=spark.read.format("csv").option("header", "true").load("hdfs://192.168.100.207:8020/test/original.csv").
+withColumn("roundID",'roundID.cast("int")).withColumn("roundID",'roundID.cast("int"))
+
+
+
+
+-------------------------------------
+--select and filter
+
+worldcup.select("col3","col1","col7").filter("col7 < 120 and col3 = 'Italy' ").show(false)
+
+-----------------------------------
+
+--count distinct value
+
+worldcup.select("col3").sort("col3").filter("col3 is not null").distinct.count()
+-----------------------------------------------------
+
+-- sample data
+worldcup.sample(0.5).filter("col3 is not null").show()
+--------------------------------------------------------
+
+--read from hdfs
+
+val rowData = spark.read.textFile("hdfs://192.168.100.207:8020/user/spark/worldcup.csv")
+
+---------------------------------------------------------
+
+--union   unionAll
+
+ cup.unionAll(worldcup).filter("col3 is not null").count()
+
+----------------------------------------------------------
+
+--group by 
+pair.groupBy("col2").avg("col7").show(false)
+
+------------------------------------------------------
+
+--convert to int
+
+val pair2 = pair.withColumn("col7",'col7.cast("int"))
+
+------------------------------------------------------
+
+--group by average value
+pair2.groupBy("col2").avg("col7").show(false)
+------------------------------------------------------
+
+-- groupBy sort desc and count
+
+ players.groupBy("playerName").count().sort(desc("count")).show
+
+----------------------------------------------------------
+
+--spark sql
+
+ players.createOrReplaceTempView("player"); or  players.createOrReplaceGlobalTempView("player");
+ spark.sql("select * from player");
+
+-----------------------------------------------------------
+
+--real time streaming
+
+
+val realtime = spark.readStream.textFile("hdfs://192.168.100.207:8020/test/").withColumn("_tmp", split($"value", "\\,")).select(
+        $"_tmp".getItem(0).as("col1"),
+        $"_tmp".getItem(1).as("col2"),
+        $"_tmp".getItem(2).as("col3"),
+        $"_tmp".getItem(3).as("col4"),
+        $"_tmp".getItem(4).as("col5"),
+        $"_tmp".getItem(5).as("col6"),
+        $"_tmp".getItem(6).as("col7"),
+        $"_tmp".getItem(7).as("col8"),
+        $"_tmp".getItem(8).as("col9"),
+        $"_tmp".getItem(9).as("col10")  
+      ).withColumn("col7",'col7.cast("int")).withColumn("col8",'col8.cast("int")).withColumn("col9",'col9.cast("int"))
+
+realtime.writeStream.format("console").outputMode("append").start()
+
+########-------alternative----###########
+
+import org.apache.spark.sql.types.StructType
+val schm = new StructType().add("id","int").add("name","string")
+val realtime = spark.readStream.schema(schm).option("sep"," ").csv("hdfs://192.168.100.207:8020/test/sparkstream/") --file listen
+val realtime = spark.readStream.schema(schm).format("socket").option("host","192.168.10.207").option("port","9092").option("sep",",") --socket lis
+
+val showdata = realtime.groupBy("name").avg("id") --should consist aggregation data if outputMode is complete
+showdata.writeStream.outputMode("complete/update").format("console").start()
+
+
+----------------------------------------------------------
+
+#############---real time streaming with time window----##########
+import org.apache.spark.sql.Encoders
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.expressions.Window  
+import org.apache.spark.sql.functions
+import spark.sqlContext.implicits._
+
+
+val rowdata = spark.readStream.textFile("hdfs://192.168.100.207:8020/test/sparkstream/")
+val realtime = rowdata.withColumn("timestamp",current_timestamp().as("current_timestamp"))
+val showdata = realtime.groupBy(functions.window(realtime.col("timestamp"),"1 minute"),realtime.col("value")).count().orderBy("window")
+showdata.writeStream.outputMode("append").format("console").start()
+
+--------------------------------------------------------------------------
+
+############--kafka-spark_streaming---################
+
+import org.apache.spark.sql.Encoders
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.expressions.Window  
+import org.apache.spark.sql.functions
+import spark.sqlContext.implicits._
+schema = StructType().add("b", StringType())
+
+val rowdata = spark.readStream.format("kafka").option("kafka.bootstrap.servers","192.168.100.207:9092").option("subscribe","amazon").load()
+val realtime = rowdata.selectExpr("Cast(value AS STRING) messages").withColumn("timestamp",current_timestamp().as("current_timestamp"))
+
+
+///first option
+val showdata = realtime.select("*")
+showdata.writeStream.outputMode("append").format("console").option("truncate", false).start()
+
+///second option
+val realtime = rowdata.selectExpr("Cast(value AS STRING) messages").withColumn("_tmp", split($"messages", "\\,")).select($"_tmp".getItem(0).as("id"),$"_tmp".getItem(1).as("name"))
+
+val showdata = realtime.groupBy(functions.window(realtime.col("timestamp"),"1 minute"),realtime.col("messages")).count()
+showdata.writeStream.outputMode("complete").format("console").option("truncate", false).start()
+
+///third
+val showdata = realtime.groupBy(col("messages")).count()
+
