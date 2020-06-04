@@ -1,0 +1,290 @@
+import org.apache.spark.ml.classification.{DecisionTreeClassifier, GBTClassifier, RandomForestClassifier}
+import org.apache.spark.ml.evaluation.{BinaryClassificationEvaluator, MulticlassClassificationEvaluator}
+import org.apache.spark.ml.feature.{StringIndexer, VectorAssembler}
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions.{col, when}
+
+object titanic {
+  def main(args: Array[String]): Unit = {
+
+    System.setProperty("hadoop.home.dir","C:\\hadoop")
+
+    val sparksession = SparkSession
+      .builder()
+      .appName("titanic")
+      .master("local")
+      .getOrCreate()
+
+    var df = sparksession
+      .read
+      .load("C:\\datasets\\titanicTrain")
+      .drop("CabinRM")
+
+    var dfTest = sparksession
+      .read
+      .load("C:\\datasets\\titanicTest")
+
+
+    val headerVec = Array("Pclass","SexIdx","Age","SibSp","Parch","Fare","EmbarkedIdx","CabinRMIdx")
+    val header = Array("Sex","Embarked")
+
+
+    for ( h <- header)
+    {
+        val indexer = new StringIndexer().setInputCol(h).setOutputCol(h+"Idx")
+        df = indexer.fit(df).transform(df)
+        dfTest = indexer.fit(dfTest).transform(dfTest)
+    }
+
+    val vectorizer = new VectorAssembler().setInputCols(headerVec).setOutputCol("features")
+    val train = vectorizer.transform(df).withColumn("label",col("Survived"))
+    val test = vectorizer.transform(dfTest)
+
+    val gb = new RandomForestClassifier()
+    val model = gb.fit(train)
+    val predict = model.transform(test)
+
+
+
+    import sparksession.implicits._
+    predict.withColumn("Survived", 'prediction.cast("int"))
+      .select("PassengerId","Survived")
+      .withColumn("Survived", 'Survived.cast("String"))
+      .withColumn("PassengerId", 'PassengerId.cast("String"))
+      .write
+      .format("csv")
+      .option("header","true")
+      .save("C:\\datasets\\titanicTestCSV")
+
+/*
+
+    val evaluator = new BinaryClassificationEvaluator()
+      .setLabelCol("label")
+      .setRawPredictionCol("prediction")
+      .setMetricName("areaUnderROC")
+
+    val accuracy = evaluator.evaluate(predict)
+    println("accuracy is:  "+accuracy)
+
+ */
+
+  }
+
+}
+
+
+import org.apache.spark.ml.classification.{GBTClassifier, LogisticRegression, NaiveBayes, RandomForestClassifier}
+import org.apache.spark.ml.clustering.KMeans
+import org.apache.spark.ml.evaluation.{BinaryClassificationEvaluator, MulticlassClassificationEvaluator}
+import org.apache.spark.ml.feature.{StringIndexer, VectorAssembler}
+import org.apache.spark.ml.regression.LinearRegression
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions.{avg, col, desc, when,lit}
+import org.apache.spark.sql.types.IntegerType
+
+object titanic {
+  def main(args: Array[String]): Unit = {
+
+    System.setProperty("hadoop.home.dir","C:\\hadoop")
+
+    val sparksession = SparkSession.builder().appName("titanic").master("local").getOrCreate()
+    var df = sparksession
+      .read
+      .format("csv")
+      .option("header","true")
+      .option("inferSchema","true")
+      .load("C:\\datasets\\titanic\\train.csv")
+
+    var dfTest = sparksession
+      .read
+      .format("csv")
+      .option("header","true")
+      .option("inferSchema","true")
+      .load("C:\\datasets\\titanic\\test.csv")
+
+    dfTest = dfTest.withColumn("Survived",lit(null: String))
+
+    df = df.select("PassengerId","Pclass","Name","Sex", "Age","SibSp","Parch","Ticket","Fare","Cabin","Embarked","Survived")
+        .union(dfTest)
+
+    val finalData = df
+    val removeAllDF = df.select("Age").na.drop()
+    val meanVal: Double = removeAllDF.agg(avg("Age")).first().getDouble(0)
+    val inputDF = finalData.na.fill(meanVal,Array("Age")).na.fill("S",Array("Embarked"))
+      .na.fill(33.29,Array("Fare"))
+
+    var cabinDF = inputDF.withColumn("CabinRM",
+      when(col("Cabin") like("A%") ,"A")
+    .when(col("Cabin") like("B%") ,"B")
+    .when(col("Cabin") like("C%") ,"C")
+    .when(col("Cabin") like("D%") ,"D")
+    .when(col("Cabin") like("E%") ,"E")
+    .when(col("Cabin") like("F%") ,"F")
+    .when(col("Cabin") like("G%") ,"G"))
+      .drop("Cabin")
+
+    val header = Array("Embarked","CabinRM","Sex")
+    val headerVec = Array("Pclass","SexIdx","Age","SibSp","Parch","Fare","EmbarkedIdx")
+    var train = cabinDF.filter("CabinRM is not null")
+    var test = cabinDF.filter("CabinRM is null")
+
+    for ( h <- header)
+      {
+        if ( h.equals("CabinRM"))
+          {
+            val indexer = new StringIndexer().setInputCol(h).setOutputCol(h+"Idx")
+            train = indexer.fit(train).transform(train)
+          }
+        else
+          {
+            val indexer = new StringIndexer().setInputCol(h).setOutputCol(h+"Idx")
+            train = indexer.fit(train).transform(train)
+            test = indexer.fit(test).transform(test)
+          }
+
+      }
+
+    val vectorizer = new VectorAssembler().setInputCols(headerVec).setOutputCol("features")
+    train = vectorizer.transform(train).withColumn("label",col("CabinRMIdx"))
+    test = vectorizer.transform(test)
+
+    val nv = new RandomForestClassifier().setMaxBins(7).setMaxDepth(30)
+    val model = nv.fit(train)
+    val predict = model.transform(test)
+
+
+   val cnt = train
+      .select("PassengerId","CabinRMIdx")
+      .union(predict
+        .select("PassengerId","prediction"))
+
+    val lastData = cabinDF.join(cnt,cabinDF.col("PassengerId") === cnt.col("PassengerId"))
+      .drop(cnt.col("PassengerId"))
+        .select("PassengerId","Survived","Pclass","Sex","Age","SibSp","Parch","Fare","Embarked","CabinRMIdx")
+
+
+    var train1 = lastData.filter("Survived is not null")
+    var test1 = lastData.filter("Survived is null")
+
+    val header1 = Array("Embarked","Sex")
+    val headerVec1 = Array("Pclass","SexIdx","Age","SibSp","Parch","Fare","EmbarkedIdx","CabinRMIdx")
+
+
+    for ( h <- header1)
+    {
+      if ( h.equals("CabinRM"))
+      {
+        val indexer = new StringIndexer().setInputCol(h).setOutputCol(h+"Idx")
+        train1 = indexer.fit(train1).transform(train1)
+      }
+      else
+      {
+        val indexer = new StringIndexer().setInputCol(h).setOutputCol(h+"Idx")
+        train1 = indexer.fit(train1).transform(train1)
+        test1 = indexer.fit(test1).transform(test1)
+      }
+
+    }
+
+    df = null
+    dfTest = null
+
+    val assembler = new VectorAssembler().setInputCols(headerVec).setOutputCol("features")
+    train1 = assembler.transform(train1).withColumn("label",col("Survived"))
+    test1 = assembler.transform(test1)
+
+    train1.write.save("C:\\datasets\\titanicTrain1")
+    test1.write.save("C:\\datasets\\titanicTest1")
+
+
+
+    /*
+
+    val rf = new GBTClassifier().setMaxIter(150)
+    val model1 = rf.fit(train1)
+    val predict1 = model1.transform(train1)
+
+
+//   lastData.write.save("C:\\datasets\\titanicTrain")
+
+    val evaluator = new BinaryClassificationEvaluator()
+      .setLabelCol("label")
+      .setRawPredictionCol("prediction")
+      .setMetricName("areaUnderROC")
+
+    val accuracy = evaluator.evaluate(predict1)
+    println("accuracy is:  "+accuracy)
+
+     */
+  }
+}
+
+
+
+import org.apache.spark.ml.Pipeline
+import org.apache.spark.ml.classification.{DecisionTreeClassifier, GBTClassifier, LogisticRegression, RandomForestClassifier}
+import org.apache.spark.ml.evaluation.{BinaryClassificationEvaluator, MulticlassClassificationEvaluator}
+import org.apache.spark.ml.tuning.{CrossValidator, ParamGridBuilder}
+import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.functions.col
+import org.apache.spark.ml.linalg.Vector
+
+object titanic {
+  def main(args: Array[String]): Unit = {
+
+    System.setProperty("hadoop.home.dir","C:\\hadoop")
+
+    val sparksession = SparkSession.builder().appName("titanic").master("local").getOrCreate()
+
+    val train = sparksession.read.load("C:\\datasets\\titanicTrain1")
+    val test = sparksession.read.load("C:\\datasets\\titanicTest1").drop("Survived")
+
+    val rf = new LogisticRegression().setMaxIter(10)
+
+    val pipeline = new Pipeline()
+      .setStages(Array(rf))
+
+    val paramgrid = new ParamGridBuilder().build()
+
+    val cv = new CrossValidator()
+      .setEstimator(pipeline)
+      .setEvaluator(new BinaryClassificationEvaluator)
+      .setEstimatorParamMaps(paramgrid)
+      .setNumFolds(2)
+
+    val model = cv.fit(train)
+    val predict = model.transform(train)
+
+    predict
+      .select("id", "text", "probability", "prediction")
+      .collect()
+      .foreach{case Row(id: Long,text: String,prob: Vector, prediction: Double )=>
+        println(s"($id, $text) --> prob=$prob, prediction=$prediction")}
+
+    /*
+
+    val evaluator = new MulticlassClassificationEvaluator()
+      .setLabelCol("label")
+      .setPredictionCol("prediction")
+      .setMetricName("accuracy")
+    val evaluate = evaluator.evaluate(predict)
+    println("accuracy is:   "+evaluate)
+
+     */
+/*
+    import sparksession.implicits._
+
+    predict
+      .withColumn("Survived",'prediction.cast("int"))
+      .select("PassengerId","Survived")
+      .write
+      .format("csv")
+      .option("header","true")
+      .save("C:\\datasets\\titanicTestCSV1")
+
+ */
+
+
+  }
+
+}
