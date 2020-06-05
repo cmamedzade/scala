@@ -1,0 +1,81 @@
+import org.apache.spark.ml.feature.Tokenizer
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions.{col,when,desc,lit,avg}
+import org.apache.log4j.Logger
+import org.apache.log4j.Level
+import org.apache.spark.sql.types.IntegerType
+
+
+object titanic {
+  def main(args: Array[String]): Unit = {
+
+
+    Logger.getLogger("org").setLevel(Level.OFF)
+    Logger.getLogger("akka").setLevel(Level.OFF)
+
+    val sparksession = SparkSession.builder().appName("titanic")
+      .master("local")
+      .getOrCreate()
+
+    val df = sparksession
+      .read
+      .format("csv")
+      .option("header","true")
+      .option("inferSchema","true")
+      .load("C:\\datasets\\titanic\\train.csv")
+
+    var name = df.withColumn("nameIdx",when(col("Name") like ("%Mrs.%"),"mrs" )
+    .when(col("Name") like ("%Rev.%"),"rev." )
+    .when(col("Name") like ("%Ms.%"),"ms" )
+    .when(col("Name") like ("%Col.%"),"col" )
+    .when(col("Name") like ("%Dr.%"),"dr" )
+    .when(col("Name") like ("%Mr.%"),"mr" )
+    .when(col("Name") like ("%Miss.%"),"miss" )
+    .when(col("Name") like ("%Master.%"),"master" )
+    .when(col("Name") like ("%Dona.%"),"dona" )
+    .when(col("Name") like ("%Don.%"),"don" )
+    .when(col("Name") like ("%Lady.%"),"lady" )
+    .when(col("Name") like ("%Sir.%"),"sir" )
+    .when(col("Name") like ("%Mlle.%"),"mlle" )
+    .when(col("Name") like ("%Capt.%"),"capt" )
+    .when(col("Name") like ("%Countess.%"),"countess" )
+    .when(col("Name") like ("%Jonkheer.%"),"jonkheer" )
+    .when(col("Name") like ("%Mme.%"),"mme" )
+    .when(col("Name") like ("%Major.%"),"major" ))
+      .withColumn("ageidx",when(col("Age") between(0,15),"A")
+      .when(col("Age") between(16,36),"B")
+      .when(col("Age") between(37,57),"C")
+      .when(col("Age") between(58,100),"D"))
+
+    val nn = name.na.fill(name
+      .filter("ageIdx = 'B' or ageIdx = 'C'")
+      .agg(avg("Age"))
+      .first().getDouble(0),Array("Age"))
+      .withColumn("ageidx",when(col("Age") between(0,15),"A")
+        .when(col("Age") between(16,36),"B")
+        .when(col("Age") between(37,57),"C")
+        .when(col("Age") between(58,100),"D"))
+
+    nn
+      .groupBy("ageIdx","nameIdx","Survived","Embarked","Sex")
+      .count()
+      .sort(desc("count"))
+      .show()
+
+
+    /*
+    val tokenizer = new Tokenizer().setInputCol("Name").setOutputCol("word")
+    val name = tokenizer.transform(df)
+    name.select(col("word").getItem(0)).filter("word[0] like '%.%'").groupBy("word[0]").count().show()
+    name.select(col("word").getItem(1)).filter("word[1] like '%.%'").groupBy("word[1]").count().show()
+    name.select(col("word").getItem(2)).filter("word[2] like '%.%'").groupBy("word[2]").count().show()
+    name.select(col("word").getItem(3)).filter("word[3] like '%.%'").groupBy("word[3]").count().show()
+    name.select(col("word").getItem(4)).filter("word[4] like '%.%'").groupBy("word[4]").count().show()
+
+     */
+
+  }
+
+}
+
+
